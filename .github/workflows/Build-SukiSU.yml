@@ -164,7 +164,9 @@ jobs:
           cd kernel_workspace
 
           mkdir -p .repo/manifests
-            cp "$GITHUB_WORKSPACE/oneplus_15.xml" .repo/manifests/oneplus_15.xml
+                curl -fL \
+            https://raw.githubusercontent.com/hoanmaster321/Action_OnePlus_MKSU_SUSFS/main/oneplus_15.xml \
+            -o .repo/manifests/oneplus_15.xml
 
           repo init \
             -u https://github.com/OnePlusOSS/kernel_manifest.git \
