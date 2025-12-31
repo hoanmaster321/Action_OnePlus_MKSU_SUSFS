@@ -164,7 +164,7 @@ jobs:
           cd kernel_workspace
 
           mkdir -p .repo/manifests
-          cp "../${{ github.event.inputs.FEIL }}.xml" .repo/manifests/temp_manifest.xml
+            cp "$GITHUB_WORKSPACE/oneplus_15.xml" .repo/manifests/oneplus_15.xml
 
           repo init \
             -u https://github.com/OnePlusOSS/kernel_manifest.git \
