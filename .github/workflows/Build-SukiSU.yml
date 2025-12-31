@@ -155,7 +155,7 @@ jobs:
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
           
-      - name: Initialize repo and sync (local xml)
+      - name: Initialize repo and sync (oneplus_15.xml)
         shell: bash
         run: |
           set -euo pipefail
@@ -164,14 +164,15 @@ jobs:
           cd kernel_workspace
 
           mkdir -p .repo/manifests
-                curl -fL \
+
+          curl -fL \
             https://raw.githubusercontent.com/hoanmaster321/Action_OnePlus_MKSU_SUSFS/main/oneplus_15.xml \
             -o .repo/manifests/oneplus_15.xml
 
           repo init \
             -u https://github.com/OnePlusOSS/kernel_manifest.git \
             -b refs/heads/oneplus/${{ github.event.inputs.CPU }} \
-            -m temp_manifest.xml \
+            -m oneplus_15.xml \
             --depth=1 \
             --no-clone-bundle \
             --no-tags
