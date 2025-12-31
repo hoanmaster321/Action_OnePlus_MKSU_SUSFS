@@ -154,64 +154,81 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
+          
+      - name: Set repo variables
+        shell: bash
+        run: |
+          echo "CONFIG=kernel_workspace" >> $GITHUB_ENV
+          echo "REPO=$(command -v repo)" >> $GITHUB_ENV
+          echo "OP_BRANCH=oneplus/${{ github.event.inputs.CPU }}" >> $GITHUB_ENV
+          echo "OP_MANIFEST=${{ github.event.inputs.FEIL }}.xml" >> $GITHUB_ENV
+          echo "OP_OS_VERSION=${{ github.event.inputs.ANDROID_VERSION }}" >> $GITHUB_ENV
 
       - name: Initialize and Sync Kernel Source
         shell: bash
         run: |
           set -euo pipefail
-          echo "::group::Initialize kernel source (sm8850 no-bazel)"
+          echo "::group::Initialize kernel source"
+          echo "Creating folder for configuration: $CONFIG"
+          mkdir -p "$CONFIG"
+          cd "$CONFIG"
+          echo "Initializing and syncing kernel source..."
+          
+          if [[ "$OP_MANIFEST" == https://* ]]; then
+            mkdir -p .repo/manifests
+            curl --fail --show-error --location --proto '=https' \
+              "$OP_MANIFEST" \
+              -o .repo/manifests/temp_manifest.xml
+            "$REPO" init \
+              -u https://github.com/OnePlusOSS/kernel_manifest.git \
+              -b "$OP_BRANCH" \
+              -m temp_manifest.xml \
+              --repo-rev=v2.16 \
+              --depth=1 \
+              --no-clone-bundle \
+              --no-tags
 
-          WORKDIR="kernel_workspace"
-          MANIFEST_NAME="oneplus_15.xml"
-          TEMP_MANIFEST="temp_manifest.xml"
-          BRANCH="oneplus/sm8850"
+          elif [[ "$OP_BRANCH" == wild/* ]]; then
+            mkdir -p .repo/manifests
+            cp "../manifests/$(echo "$OP_OS_VERSION" | tr '[:upper:]' '[:lower:]')/$OP_MANIFEST" \
+               .repo/manifests/temp_manifest.xml
+            "$REPO" init \
+              -u https://github.com/OnePlusOSS/kernel_manifest.git \
+              -b "$OP_BRANCH" \
+              -m temp_manifest.xml \
+              --repo-rev=v2.16 \
+              --depth=1 \
+              --no-clone-bundle \
+              --no-tags
 
-          mkdir -p "$WORKDIR"
-          cd "$WORKDIR"
-
-          echo "📥 Preparing temporary manifest"
-
-          # 1️⃣ Lấy manifest gốc về dạng file tạm
-          mkdir -p .repo/manifests
-          curl --fail --show-error --location \
-            https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/$BRANCH/$MANIFEST_NAME \
-            -o .repo/manifests/$TEMP_MANIFEST
-
-          # 2️⃣ 🔥 XOÁ BAZEL / TRUSTY / CLO-LA TRONG MANIFEST TẠM
-          sed -i '/bazel/d' .repo/manifests/$TEMP_MANIFEST
-          sed -i '/trusty/d' .repo/manifests/$TEMP_MANIFEST
-          sed -i '/clo-la/d' .repo/manifests/$TEMP_MANIFEST
-
-          echo "🧹 Cleaned manifest (no bazel / trusty / clo-la)"
-
-          # 3️⃣ Repo init dùng manifest tạm
-          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git \
-            -b "$BRANCH" \
-            -m "$TEMP_MANIFEST" \
-            --repo-rev=v2.16 \
-            --depth=1 \
-            --no-clone-bundle \
-            --no-tags
-
-          repo --version
-
-          # 4️⃣ Repo sync (retry 3 lần)
+          else
+            "$REPO" init \
+              -u https://github.com/OnePlusOSS/kernel_manifest.git \
+              -b "$OP_BRANCH" \
+              -m "$OP_MANIFEST" \
+              --repo-rev=v2.16 \
+              --depth=1 \
+              --no-clone-bundle \
+              --no-tags
+          fi
+          
+          "$REPO" --version
           success=false
           for i in 1 2 3; do
-            echo "🔄 repo sync attempt $i"
-            if repo sync -c --optimized-fetch \
-               --no-clone-bundle --no-tags \
-               -j"$(nproc --all)" --fail-fast; then
+            if "$REPO" sync -c \
+               --no-clone-bundle \
+               --no-tags \
+               --optimized-fetch \
+               -j"$(nproc --all)" \
+               --fail-fast; then
               success=true
               break
             fi
-            echo "⚠️ repo sync attempt $i failed; retrying in 30s..."
+            echo "⚠️ repo sync attempt $i failed; retrying..."
             sleep 30
           done
-
           $success || { echo "::error::repo sync failed after 3 attempts"; exit 1; }
-
-          echo "✅ Kernel source synced successfully"
+          echo "✅ Kernel source synced"
           echo "::endgroup::"
 
       # 删除 -dirty 后缀
