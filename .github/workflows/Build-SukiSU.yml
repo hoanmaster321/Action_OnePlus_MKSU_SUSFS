@@ -137,8 +137,6 @@ jobs:
             sed -i 's/ -dirty//g' external/dtc/scripts/setlocalversion
           fi
           sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' common/scripts/setlocalversion
-          git add -A
-          git commit -m "Force remove -dirty suffix from kernel version"
 
       - name: Add KernelSU-SukiSU Ultra
         run: |
