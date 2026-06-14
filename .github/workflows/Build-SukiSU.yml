@@ -91,26 +91,29 @@ jobs:
             cp kernel_platform/soc-repo/qcom_build_extensions kernel_platform/build/qcom_build_extensions
           fi
 
-          # 3. Modules and devicetree (contains oplus/ build scripts at root level)
+          # 3. Modules and devicetree (kernel_platform/oplus/ is inside kernel_platform/)
           echo "Cloning android_kernel_modules_and_devicetree_oneplus_sm8850..."
           git clone --depth=1 --single-branch \
             -b oneplus/sm8850_b_16.0.0_oneplus_15 \
             https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8850.git \
-            kernel_workspace_modules
+            _modules_tmp
 
-          # Move oplus/ into kernel_platform
-          if [ -d kernel_workspace_modules/oplus ]; then
-            mv kernel_workspace_modules/oplus kernel_platform/
+          # Merge kernel_platform/ contents (includes oplus/build/oplus_build_kernel.sh)
+          if [ -d _modules_tmp/kernel_platform ]; then
+            cp -r _modules_tmp/kernel_platform/* kernel_platform/
           fi
 
-          # Copy remaining files from modules repo to workspace root
-          for f in kernel_workspace_modules/*; do
+          # Copy vendor/ and other top-level items to workspace root
+          for f in _modules_tmp/*; do
             fname=$(basename "$f")
-            if [ "$fname" != "oplus" ] && [ "$fname" != "kernel_platform" ]; then
+            if [ "$fname" != "kernel_platform" ]; then
               cp -r "$f" ./
             fi
           done
-          rm -rf kernel_workspace_modules
+          rm -rf _modules_tmp
+
+          # Verify build script exists
+          ls -la kernel_platform/oplus/build/oplus_build_kernel.sh
 
           # Set up source_date_epoch_dir
           mkdir -p kernel_platform/.source_date_epoch_dir
