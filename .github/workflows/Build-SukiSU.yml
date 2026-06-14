@@ -70,9 +70,16 @@ jobs:
 
           mkdir -p .repo/manifests
 
+          # Download and fix manifest (stale upstream refs on codelinaro.org)
           curl -fL \
             https://raw.githubusercontent.com/hoanmaster321/Action_OnePlus_MKSU_SUSFS/main/oneplus_15.xml \
             -o .repo/manifests/oneplus_15.xml
+
+          # Remove stale upstream attributes that point to deleted branches
+          sed -i 's/ upstream="[^"]*"//g' .repo/manifests/oneplus_15.xml
+
+          # Fix default revision (dummy_revision doesn't exist, use a real one)
+          sed -i 's/revision="dummy_revision"/revision="refs\/heads\/ks-kernel.lnx.1.0.r0-rel"/g' .repo/manifests/oneplus_15.xml
 
           repo init \
             -u https://github.com/OnePlusOSS/kernel_manifest.git \
@@ -82,20 +89,38 @@ jobs:
             --no-clone-bundle \
             --no-tags
 
-          # Sync with retry logic - codelinaro.org projects may need retries
+          # Sync with retry - skip projects with missing refs
           for attempt in 1 2 3; do
             echo "repo sync attempt $attempt..."
-            if repo sync -c --no-clone-bundle --no-tags -j4 --fail-fast; then
+            if repo sync -c --no-clone-bundle --no-tags -j4 --fail-fast 2>&1; then
               echo "repo sync succeeded on attempt $attempt"
               break
             else
-              echo "repo sync attempt $attempt failed, retrying in 10s..."
-              sleep 10
+              echo "repo sync attempt $attempt had errors, continuing..."
+              sleep 5
             fi
           done
 
+          # Ensure essential prebuilts exist; if not, clone from GitHub alternatives
+          if [ ! -d kernel_platform/prebuilts/clang/host/linux-x86 ]; then
+            echo "WARNING: clang prebuilts missing, attempting to fetch from AOSP..."
+            mkdir -p kernel_platform/prebuilts/clang/host
+            git clone --depth=1 \
+              https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
+              kernel_platform/prebuilts/clang/host/linux-x86 || true
+          fi
+
+          # Ensure build-tools exist
+          if [ ! -d kernel_platform/prebuilts/build-tools ]; then
+            echo "WARNING: build-tools missing, attempting to fetch..."
+            mkdir -p kernel_platform/prebuilts
+            git clone --depth=1 \
+              https://android.googlesource.com/platform/prebuilts/build-tools \
+              kernel_platform/prebuilts/build-tools || true
+          fi
+
           # Set up source_date_epoch_dir
-          mkdir -p kernel_platform/.source_date_epoch_dir
+          mkdir -p kernel_platform/.source_date_epoch_dir || true
 
           # Clean protected_exports_list
           if [ -e kernel_platform/common/BUILD.bazel ]; then
