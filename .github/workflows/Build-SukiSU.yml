@@ -50,39 +50,75 @@ jobs:
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y python3 git curl
 
-      - name: Install repo tool
-        run: |
-          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo | sudo tee /usr/local/bin/repo > /dev/null
-          sudo chmod a+x /usr/local/bin/repo
-
-      - name: Initialize repo and sync source
+      - name: Clone kernel sources and sync
         shell: bash
+        timeout-minutes: 60
         run: |
           set -euo pipefail
 
-          mkdir kernel_workspace
+          mkdir -p kernel_workspace/kernel_platform
           cd kernel_workspace
 
-          mkdir -p .repo/manifests
+          # 1. Common GKI kernel
+          echo "Cloning android_kernel_common_oneplus_sm8850..."
+          git clone --depth=1 --single-branch \
+            -b oneplus/sm8850_b_16.0.0_oneplus_15 \
+            https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8850.git \
+            kernel_platform/common
 
-          curl -fL \
-            https://raw.githubusercontent.com/hoanmaster321/Action_OnePlus_MKSU_SUSFS/main/oneplus_15.xml \
-            -o .repo/manifests/oneplus_15.xml
+          # 2. SoC-specific kernel (clone to soc-repo, symlink to msm-kernel)
+          echo "Cloning android_kernel_oneplus_sm8850..."
+          git clone --depth=1 --single-branch \
+            -b oneplus/sm8850_b_16.0.0_oneplus_15 \
+            https://github.com/OnePlusOSS/android_kernel_oneplus_sm8850.git \
+            kernel_platform/soc-repo
 
-          repo init \
-            -u https://github.com/OnePlusOSS/kernel_manifest.git \
-            -b refs/heads/oneplus/sm8850 \
-            -m oneplus_15.xml \
-            --depth=1 \
-            --no-clone-bundle \
-            --no-tags
+          # Set up symlinks expected by build system
+          ln -sfn soc-repo kernel_platform/msm-kernel
 
-          repo sync -c --no-clone-bundle --no-tags -j$(nproc)
+          # Set up linkfiles from manifest (WORKSPACE, build_with_bazel.py, etc.)
+          if [ -f kernel_platform/soc-repo/bazel.WORKSPACE ]; then
+            cp kernel_platform/soc-repo/bazel.WORKSPACE kernel_platform/WORKSPACE
+          fi
+          if [ -f kernel_platform/soc-repo/build_with_bazel.py ]; then
+            cp kernel_platform/soc-repo/build_with_bazel.py kernel_platform/build_with_bazel.py
+          fi
+          if [ -f kernel_platform/soc-repo/device.bazelrc ]; then
+            cp kernel_platform/soc-repo/device.bazelrc kernel_platform/device.bazelrc
+          fi
+          if [ -f kernel_platform/soc-repo/qcom_build_extensions ]; then
+            mkdir -p kernel_platform/build
+            cp kernel_platform/soc-repo/qcom_build_extensions kernel_platform/build/qcom_build_extensions
+          fi
 
+          # 3. Modules and devicetree (contains oplus/ build scripts at root level)
+          echo "Cloning android_kernel_modules_and_devicetree_oneplus_sm8850..."
+          git clone --depth=1 --single-branch \
+            -b oneplus/sm8850_b_16.0.0_oneplus_15 \
+            https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8850.git \
+            kernel_workspace_modules
+
+          # Move oplus/ into kernel_platform
+          if [ -d kernel_workspace_modules/oplus ]; then
+            mv kernel_workspace_modules/oplus kernel_platform/
+          fi
+
+          # Copy remaining files from modules repo to workspace root
+          for f in kernel_workspace_modules/*; do
+            fname=$(basename "$f")
+            if [ "$fname" != "oplus" ] && [ "$fname" != "kernel_platform" ]; then
+              cp -r "$f" ./
+            fi
+          done
+          rm -rf kernel_workspace_modules
+
+          # Set up source_date_epoch_dir
+          mkdir -p kernel_platform/.source_date_epoch_dir
+
+          # Clean protected_exports_list
           if [ -e kernel_platform/common/BUILD.bazel ]; then
             sed -i '/protected_exports_list/d' kernel_platform/common/BUILD.bazel
           fi
-
           if [ -e kernel_platform/msm-kernel/BUILD.bazel ]; then
             sed -i '/protected_exports_list/d' kernel_platform/msm-kernel/BUILD.bazel
           fi
@@ -94,8 +130,12 @@ jobs:
         run: |
           cd kernel_workspace/kernel_platform
           sed -i 's/ -dirty//g' common/scripts/setlocalversion
-          sed -i 's/ -dirty//g' msm-kernel/scripts/setlocalversion
-          sed -i 's/ -dirty//g' external/dtc/scripts/setlocalversion
+          if [ -f msm-kernel/scripts/setlocalversion ]; then
+            sed -i 's/ -dirty//g' msm-kernel/scripts/setlocalversion
+          fi
+          if [ -f external/dtc/scripts/setlocalversion ]; then
+            sed -i 's/ -dirty//g' external/dtc/scripts/setlocalversion
+          fi
           sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' common/scripts/setlocalversion
           git add -A
           git commit -m "Force remove -dirty suffix from kernel version"
